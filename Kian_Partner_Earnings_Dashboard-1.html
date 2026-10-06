@@ -1,0 +1,117 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kian Partner Earnings</title>
+<style>
+body{margin:0;background:#0b1020;color:#eaf0ff;font-family:Arial,sans-serif}
+.wrap{max-width:760px;margin:auto;padding:22px}
+.card{background:#121a2d;border:1px solid #263452;border-radius:18px;padding:18px;margin:14px 0}
+h1{margin:0 0 6px}.muted{color:#9eabc6;font-size:14px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+label{display:block;font-size:13px;color:#aebbd5;margin-bottom:6px}
+input,button{width:100%;box-sizing:border-box;padding:12px;border-radius:10px;border:1px solid #30405f;background:#0d1425;color:#fff}
+button{cursor:pointer;background:#2463ff;border:0;font-weight:700}
+.stat{font-size:26px;font-weight:800}.row{display:flex;justify-content:space-between;border-bottom:1px solid #263452;padding:11px 0}
+.ok{color:#56e39f}.warn{color:#ffd166}.err{color:#ff7373}
+pre{white-space:pre-wrap;word-break:break-word;background:#09101e;padding:12px;border-radius:10px;max-height:300px;overflow:auto}
+@media(max-width:600px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>🤖 Kian Partner Earnings</h1>
+    <div class="muted">Separate dashboard for your Deriv partner account. It does not replace the Kian trading bot.</div>
+  </div>
+
+  <div class="card">
+    <h2>Connection</h2>
+    <div class="grid">
+      <div><label>Backend URL</label><input id="backend" placeholder="https://your-server.example.com"></div>
+      <div><label>Deriv App ID</label><input id="appId" placeholder="Your App ID"></div>
+    </div>
+    <br>
+    <button id="connect">Connect Partner Account</button>
+    <p id="status" class="muted">Not connected.</p>
+  </div>
+
+  <div class="card">
+    <h2>Reporting period</h2>
+    <div class="grid">
+      <div><label>From</label><input id="from" type="date"></div>
+      <div><label>To</label><input id="to" type="date"></div>
+    </div>
+    <br><button id="refresh">Refresh Earnings</button>
+  </div>
+
+  <div class="grid">
+    <div class="card"><div class="muted">Sign-ups</div><div id="signups" class="stat">—</div></div>
+    <div class="card"><div class="muted">Partner Earnings</div><div id="earnings" class="stat">$—</div></div>
+    <div class="card"><div class="muted">Trading Activity</div><div id="activity" class="stat">$—</div></div>
+    <div class="card"><div class="muted">Markup</div><div id="markup" class="stat">$—</div></div>
+  </div>
+
+  <div class="card">
+    <h2>Client tag checker</h2>
+    <div class="muted">Enter Deriv client IDs separated by commas. The backend checks them against your partner account.</div><br>
+    <input id="clients" placeholder="123456, 789012">
+    <br><br><button id="check">Check Client Tags</button>
+    <pre id="tagResult">No check yet.</pre>
+  </div>
+
+  <div class="card">
+    <h2>Referral</h2>
+    <div class="muted">Paste the referral link generated in Deriv Partner's Hub.</div><br>
+    <input id="referral" placeholder="https://...">
+    <br><br><button id="copy">Copy Referral Link</button>
+  </div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const today=new Date(); const iso=d=>d.toISOString().slice(0,10);
+$("to").value=iso(today);
+const prior=new Date(today); prior.setDate(prior.getDate()-30); $("from").value=iso(prior);
+
+function base(){return $("backend").value.trim().replace(/\/$/,"")}
+function msg(t,c="muted"){$("status").className=c;$("status").textContent=t}
+async function api(path,opts={}){
+  const u=base()+path;
+  if(!base()) throw new Error("Enter your backend URL first.");
+  const r=await fetch(u,{...opts,headers:{"Content-Type":"application/json",...(opts.headers||{})}});
+  const data=await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(data.error||data.message||("HTTP "+r.status));
+  return data;
+}
+$("connect").onclick=async()=>{
+  try{
+    const d=await api("/auth/start?app_id="+encodeURIComponent($("appId").value.trim()));
+    if(d.authorize_url){location.href=d.authorize_url}else msg("Backend connected. "+JSON.stringify(d),"ok");
+  }catch(e){msg(e.message,"err")}
+};
+$("refresh").onclick=async()=>{
+  try{
+    msg("Refreshing…");
+    const f=$("from").value,t=$("to").value;
+    const d=await api(`/api/overview?start_date=${f}&end_date=${t}`);
+    const x=d.data||d;
+    $("signups").textContent=x.signups ?? x.total_signups ?? "—";
+    $("earnings").textContent="$"+Number(x.commission ?? x.earnings ?? x.total_commission ?? 0).toFixed(2);
+    $("activity").textContent="$"+Number(x.activity ?? x.net_revenue ?? 0).toFixed(2);
+    const m=await api(`/api/markup?date_from=${f}&date_to=${t}`);
+    const md=m.data||m;
+    $("markup").textContent="$"+Number(md.markup ?? md.total_markup ?? md.commission ?? 0).toFixed(2);
+    msg("Updated.","ok");
+  }catch(e){msg(e.message,"err")}
+};
+$("check").onclick=async()=>{
+  try{
+    const ids=$("clients").value.split(",").map(x=>x.trim()).filter(Boolean);
+    const d=await api("/api/client-tags",{method:"POST",body:JSON.stringify({client_ids:ids})});
+    $("tagResult").textContent=JSON.stringify(d,null,2);
+  }catch(e){$("tagResult").textContent=e.message}
+};
+$("copy").onclick=async()=>{await navigator.clipboard.writeText($("referral").value);msg("Referral link copied.","ok")};
+</script>
+</body></html>
